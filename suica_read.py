@@ -8,6 +8,7 @@ import struct
 import sys
 import nfc
 import datetime
+import fcntl
 
 num_blocks = 20
 service_code = 0x090f
@@ -135,13 +136,19 @@ def connected(tag):
       filename = "NFC-%s-%s-%06dJPY.csv" % (id, now, last_history.balance)
       with open(filename, mode='w') as f:
         f.write(content)
-      print filename
-      print content
+      print(filename)
+      print(content)
     except Exception as e:
-      print "error: %s" % e
+      print("error: %s" % e)
   else:
-    print "error: tag isn't Type3Tag"
+    print("error: tag isn't Type3Tag")
  
 if __name__ == "__main__":
-  clf = nfc.ContactlessFrontend('usb')
-  clf.connect(rdwr={'on-connect': connected})
+  lockfilePath = '/tmp/suica_read.lock'
+  with open(lockfilePath , "w") as lockFile:
+    try:
+      fcntl.flock(lockFile, fcntl.LOCK_EX | fcntl.LOCK_NB)
+      clf = nfc.ContactlessFrontend('usb')
+      clf.connect(rdwr={'on-connect': connected})
+    except IOError:
+      print('process already exists')
