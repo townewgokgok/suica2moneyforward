@@ -6,10 +6,8 @@ import binascii
 import os
 import struct
 import sys
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/nfcpy')
-
 import nfc
+import datetime
 
 num_blocks = 20
 service_code = 0x090f
@@ -28,7 +26,7 @@ class StationRecord(object):
   @classmethod
   def get_none(cls):
     # 駅データが見つからないときに使う
-    return cls(["0", "0", "0", "None", "None", "None"])
+    return cls(["0", "0", "0", "", "", ""])
   @classmethod
   def get_db(cls, filename):
     # 駅データのcsvを読み込んでキャッシュする
@@ -55,6 +53,8 @@ class HistoryRecord(object):
     self.db = None
     self.console = self.get_console(row_be[0])
     self.process = self.get_process(row_be[1])
+    self.category_h = self.get_category_h(row_be[1])
+    self.category_l = self.get_category_l(row_be[1])
     self.year = self.get_year(row_be[3])
     self.month = self.get_month(row_be[3])
     self.day = self.get_day(row_be[3])
@@ -85,6 +85,24 @@ class HistoryRecord(object):
       0x46: "物販",
     }.get(key)
   @classmethod
+  def get_category_h(cls, key):
+    # よく使われそうなもののみ対応
+    return {
+      0x01: "交通費",
+      0x02: "その他入金",
+      0x0f: "交通費",
+      0x46: "食費",
+    }.get(key)
+  @classmethod
+  def get_category_l(cls, key):
+    # よく使われそうなもののみ対応
+    return {
+      0x01: "電車",
+      0x02: "",
+      0x0f: "バス",
+      0x46: "食料品",
+    }.get(key)
+  @classmethod
   def get_year(cls, date):
     return (date >> 9) & 0x7f
   @classmethod
@@ -95,26 +113,30 @@ class HistoryRecord(object):
     return (date >> 0) & 0x1f
  
 def connected(tag):
-  print tag
- 
   if isinstance(tag, nfc.tag.tt3.Type3Tag):
     try:
+      id = binascii.hexlify(tag.identifier).upper()
+      now = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
+      filename = "NFC-%s-%s.csv" % (id, now)
       sc = nfc.tag.tt3.ServiceCode(service_code >> 6 ,service_code & 0x3f)
-      for i in range(num_blocks):
+      last_history = None
+      content = "計算対象,日付,内容,金額(円),保有金融機関,大項目,中項目,メモ\n"
+      for i in range(num_blocks-1, -1, -1):
         bc = nfc.tag.tt3.BlockCode(i,service=0)
         data = tag.read_without_encryption([sc],[bc])
         history = HistoryRecord(bytes(data))
-        print "=== %02d ===" % i
-        print "端末種: %s" % history.console
-        print "処理: %s" % history.process
-        print "日付: %02d-%02d-%02d" % (history.year, history.month, history.day)
-        print "入線区: %s-%s" % (history.in_station.company_value, history.in_station.line_value)
-        print "入駅順: %s" % history.in_station.station_value
-        print "出線区: %s-%s" % (history.out_station.company_value, history.out_station.line_value)
-        print "出駅順: %s" % history.out_station.station_value
-        print "残高: %d" % history.balance
-        print "BIN: " 
-        print "" . join(['%02x ' % s for s in data])
+        if not last_history is None:
+          diff = history.balance - last_history.balance
+          detail = ""
+          if history.in_station.station_value != "" and history.out_station.station_value != "":
+            detail = "%s→%s" % (history.in_station.station_value, history.out_station.station_value)
+          content += '1,20%02d/%02d/%02d,%s,%d,手入力,%s,%s,"%s"' % (history.year, history.month, history.day, history.process, diff, history.category_h, history.category_l, detail)
+          content += "\n"
+        last_history = history
+      with open(filename, mode='w') as f:
+        f.write(content)
+      print filename
+      print content
     except Exception as e:
       print "error: %s" % e
   else:
