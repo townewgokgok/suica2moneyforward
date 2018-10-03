@@ -47,9 +47,9 @@ class StationRecord(object):
 class HistoryRecord(object):
   def __init__(self, data):
     # ビッグエンディアンでバイト列を解釈する
-    row_be = struct.unpack('>2B2H4BH4B', data)
+    row_be = struct.unpack('>2B2H4BHBHB', data)
     # リトルエンディアンでバイト列を解釈する
-    row_le = struct.unpack('<2B2H4BH4B', data)
+    row_le = struct.unpack('<2B2H4BHBHB', data)
  
     self.db = None
     self.console = self.get_console(row_be[0])
@@ -60,6 +60,8 @@ class HistoryRecord(object):
     self.month = self.get_month(row_be[3])
     self.day = self.get_day(row_be[3])
     self.balance = row_le[8]
+    self.record_id = row_be[9] * 65536 + row_be[10]
+    self.region = row_be[11]
  
     self.in_station = StationRecord.get_station(row_be[4], row_be[5])
     self.out_station = StationRecord.get_station(row_be[6], row_be[7])
@@ -117,27 +119,36 @@ def connected(tag):
   if isinstance(tag, nfc.tag.tt3.Type3Tag):
     try:
       sc = nfc.tag.tt3.ServiceCode(service_code >> 6 ,service_code & 0x3f)
+      id = binascii.hexlify(tag.identifier).upper()
+      filename = "NFC-%s.csv" % id
+      content = ["計算対象,日付,内容,金額(円),保有金融機関,大項目,中項目,メモ\n"]
+      if os.path.exists(filename):
+        with open(filename) as f:
+          content = f.readlines()
+
       last_history = None
-      content = "計算対象,日付,内容,金額(円),保有金融機関,大項目,中項目,メモ\n"
       for i in range(num_blocks-1, -1, -1):
         bc = nfc.tag.tt3.BlockCode(i,service=0)
         data = tag.read_without_encryption([sc],[bc])
         history = HistoryRecord(bytes(data))
         if not last_history is None:
           diff = history.balance - last_history.balance
-          detail = history.console
+          detail = "#%d %s" % (history.record_id, history.console)
           if history.in_station.station_value != "" and history.out_station.station_value != "":
             detail += " %s→%s" % (history.in_station.station_value, history.out_station.station_value)
-          content += '1,20%02d/%02d/%02d,%s,%d,手入力,%s,%s,"%s"' % (history.year, history.month, history.day, history.process, diff, history.category_h, history.category_l, detail)
-          content += "\n"
+          # detail += " "
+          # detail += "".join(['%02x' % s for s in data])
+          line = '1,20%02d/%02d/%02d,%s,%d,手入力,%s,%s,"%s"' % (history.year, history.month, history.day, history.process, diff, history.category_h, history.category_l, detail)
+          print(line)
+          line += "\n"
+          if not line in content:
+            content.append(line)
         last_history = history
-      id = binascii.hexlify(tag.identifier).upper()
-      now = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
-      filename = "NFC-%s-%s-%06dJPY.csv" % (id, now, last_history.balance)
+
       with open(filename, mode='w') as f:
-        f.write(content)
+        f.writelines(content)
+
       print(filename)
-      print(content)
     except Exception as e:
       print("error: %s" % e)
   else:
