@@ -115,9 +115,6 @@ class HistoryRecord(object):
 def connected(tag):
   if isinstance(tag, nfc.tag.tt3.Type3Tag):
     try:
-      id = binascii.hexlify(tag.identifier).upper()
-      now = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
-      filename = "NFC-%s-%s.csv" % (id, now)
       sc = nfc.tag.tt3.ServiceCode(service_code >> 6 ,service_code & 0x3f)
       last_history = None
       content = "計算対象,日付,内容,金額(円),保有金融機関,大項目,中項目,メモ\n"
@@ -127,12 +124,15 @@ def connected(tag):
         history = HistoryRecord(bytes(data))
         if not last_history is None:
           diff = history.balance - last_history.balance
-          detail = ""
+          detail = history.console
           if history.in_station.station_value != "" and history.out_station.station_value != "":
-            detail = "%s→%s" % (history.in_station.station_value, history.out_station.station_value)
+            detail += " %s→%s" % (history.in_station.station_value, history.out_station.station_value)
           content += '1,20%02d/%02d/%02d,%s,%d,手入力,%s,%s,"%s"' % (history.year, history.month, history.day, history.process, diff, history.category_h, history.category_l, detail)
           content += "\n"
         last_history = history
+      id = binascii.hexlify(tag.identifier).upper()
+      now = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
+      filename = "NFC-%s-%s-%06dJPY.csv" % (id, now, last_history.balance)
       with open(filename, mode='w') as f:
         f.write(content)
       print filename
