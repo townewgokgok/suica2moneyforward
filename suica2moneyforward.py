@@ -55,9 +55,9 @@ class HistoryRecord(object):
  
     self.db = None
     self.console = self.get_console(row_be[0])
-    self.process = self.get_process(row_be[1])
-    self.category_h = self.get_category_h(row_be[1])
-    self.category_l = self.get_category_l(row_be[1])
+    self.process = self.get_process(row_be[1])[0]
+    self.category_h = self.get_process(row_be[1])[1]
+    self.category_l = self.get_process(row_be[1])[2]
     self.year = self.get_year(row_be[3])
     self.month = self.get_month(row_be[3])
     self.day = self.get_day(row_be[3])
@@ -65,47 +65,67 @@ class HistoryRecord(object):
     self.record_id = row_be[9] * 65536 + row_be[10]
     self.region = row_be[11]
  
-    self.in_station = StationRecord.get_station(row_be[4], row_be[5])
-    self.out_station = StationRecord.get_station(row_be[6], row_be[7])
+    if not row_be[0] in [5, 199, 200]:
+      self.in_station = StationRecord.get_station(row_be[4], row_be[5])
+      self.out_station = StationRecord.get_station(row_be[6], row_be[7])
+    else:
+      self.in_station = None
+      self.out_station = None
  
   @classmethod
   def get_console(cls, key):
-    # よく使われそうなもののみ対応
     return {
-      0x03: "精算機",
-      0x04: "携帯型端末",
-      0x05: "車載端末",
-      0x12: "券売機",
-      0x16: "改札機",
-      0x1c: "乗継精算機",
-      0xc8: "自販機",
+      3: '精算機',
+      4: '携帯型端末',
+      5: '車載端末',
+      7: '券売機',
+      8: '券売機',
+      9: '入金機',
+      18: '券売機',
+      20: '券売機等',
+      21: '券売機等',
+      22: '改札機',
+      23: '簡易改札機',
+      24: '窓口端末',
+      25: '窓口端末',
+      26: '改札端末',
+      27: '携帯電話',
+      28: '乗継精算機',
+      29: '連絡改札機',
+      31: '簡易入金機',
+      70: 'VIEW ALTTE',
+      72: 'VIEW ALTTE',
+      199: '物販端末',
+      200: '自販機'
     }.get(key)
   @classmethod
   def get_process(cls, key):
-    # よく使われそうなもののみ対応
     return {
-      0x01: "運賃支払",
-      0x02: "チャージ",
-      0x0f: "バス",
-      0x46: "物販",
-    }.get(key)
-  @classmethod
-  def get_category_h(cls, key):
-    # よく使われそうなもののみ対応
-    return {
-      0x01: "交通費",
-      0x02: "その他入金",
-      0x0f: "交通費",
-      0x46: "食費",
-    }.get(key)
-  @classmethod
-  def get_category_l(cls, key):
-    # よく使われそうなもののみ対応
-    return {
-      0x01: "電車",
-      0x02: "",
-      0x0f: "バス",
-      0x46: "食料品",
+      1: ['運賃支払(改札出場)', '交通費', '電車'],
+      2: ['チャージ', 'その他入金', ''],
+      3: ['券購(磁気券購入)', '交通費', '電車'],
+      4: ['精算', '交通費', '電車'],
+      5: ['精算(入場精算)', '交通費', '電車'],
+      6: ['窓出(改札窓口処理)', '交通費', '電車'],
+      7: ['新規(新規発行)', 'その他入金', ''],
+      8: ['控除(窓口控除)', 'その他入金', ''],
+      13: ['バス(PiTaPa系)', '交通費', 'バス'],
+      15: ['バス(IruCa系)', '交通費', 'バス'],
+      17: ['再発(再発行処理)', 'その他入金', ''],
+      19: ['支払(新幹線利用)', '交通費', '電車'],
+      20: ['入A(入場時オートチャージ)', 'その他入金', ''],
+      21: ['出A(出場時オートチャージ)', 'その他入金', ''],
+      31: ['入金(バスチャージ)', 'その他入金', ''],
+      35: ['券購(バス路面電車企画券購入)', '交通費', 'バス'],
+      70: ['物販', '食費', '食料品'],
+      72: ['特典(特典チャージ)', 'その他入金', ''],
+      73: ['入金(レジ入金)', 'その他入金', ''],
+      74: ['物販取消', 'その他入金', ''],
+      75: ['入物(入場物販)', '食費', '食料品'],
+      198: ['物現(現金併用物販)', '食費', '食料品'],
+      203: ['入物(入場現金併用物販)', '食費', '食料品'],
+      132: ['精算(他社精算)', '交通費', '電車'],
+      133: ['精算(他社入場精算)', '交通費', '電車']
     }.get(key)
   @classmethod
   def get_year(cls, date):
@@ -144,7 +164,7 @@ def connected(tag):
         if not last_history is None:
           diff = history.balance - last_history.balance
           detail = "#%d %s" % (history.record_id, history.console)
-          if history.in_station.station_value != "" and history.out_station.station_value != "":
+          if not history.in_station is None or not history.out_station is None:
             detail += " %s→%s" % (history.in_station.station_value, history.out_station.station_value)
           # detail += " "
           # detail += "".join(['%02x' % s for s in data])
