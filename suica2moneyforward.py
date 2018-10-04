@@ -8,10 +8,12 @@ import struct
 import sys
 import nfc
 import datetime
+import json
 import fcntl
 
 num_blocks = 20
 service_code = 0x090f
+here = os.path.dirname(os.path.abspath(__file__))
  
 class StationRecord(object):
   db = None
@@ -39,7 +41,7 @@ class StationRecord(object):
   @classmethod
   def get_station(cls, line_key, station_key):
     # 線区コードと駅コードに対応するStationRecordを検索する
-    for station in cls.get_db("StationCode.csv"):
+    for station in cls.get_db(here+'/StationCode.csv'):
       if station.line_key == line_key and station.station_key == station_key:
         return station
     return cls.get_none()
@@ -120,13 +122,21 @@ def connected(tag):
     try:
       sc = nfc.tag.tt3.ServiceCode(service_code >> 6 ,service_code & 0x3f)
       id = binascii.hexlify(tag.identifier).upper()
-      filename = "NFC-%s.csv" % id
+      csvfile = "NFC-%s.csv" % id
+      statefile = "NFC-%s.json" % id
+
+      state = {'balance': 0, 'record_id': 0}
+      if os.path.exists(statefile):
+        with open(statefile) as f:
+          state = json.load(f)
+
       content = ["計算対象,日付,内容,金額(円),保有金融機関,大項目,中項目,メモ\n"]
-      if os.path.exists(filename):
-        with open(filename) as f:
+      if os.path.exists(csvfile):
+        with open(csvfile) as f:
           content = f.readlines()
 
       last_history = None
+      dirty = False
       for i in range(num_blocks-1, -1, -1):
         bc = nfc.tag.tt3.BlockCode(i,service=0)
         data = tag.read_without_encryption([sc],[bc])
@@ -139,23 +149,38 @@ def connected(tag):
           # detail += " "
           # detail += "".join(['%02x' % s for s in data])
           line = '1,20%02d/%02d/%02d,%s,%d,手入力,%s,%s,"%s"' % (history.year, history.month, history.day, history.process, diff, history.category_h, history.category_l, detail)
-          print(line)
           line += "\n"
-          if not line in content:
+          if not line in content and state['record_id'] < history.record_id:
+            if not dirty:
+              sys.stdout.write(content[0])
+            sys.stdout.write(line)
             content.append(line)
+            dirty = True
         last_history = history
 
-      with open(filename, mode='w') as f:
+      if not dirty:
+        print("no update")
+        return
+
+      with open(csvfile, mode='w') as f:
         f.writelines(content)
 
-      print(filename)
+      if not last_history is None:
+        state['balance'] = last_history.balance
+        state['record_id'] = last_history.record_id
+      with open(statefile, 'w') as f:
+        json.dump(state, f)
+
+      print("")
+      print("updated %s" % csvfile)
+      print("updated %s" % statefile)
     except Exception as e:
       print("error: %s" % e)
   else:
     print("error: tag isn't Type3Tag")
- 
+
 if __name__ == "__main__":
-  lockfilePath = '/tmp/suica_read.lock'
+  lockfilePath = '/tmp/suica2moneyforward.lock'
   with open(lockfilePath , "w") as lockFile:
     try:
       fcntl.flock(lockFile, fcntl.LOCK_EX | fcntl.LOCK_NB)
